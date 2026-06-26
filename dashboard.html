@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor Calidad del Aire · Grupo 9</title>
+
+<!-- ===================================================================
+     PASO 1: Pega aquí la configuración de tu Firebase.
+     La encuentras en: consola Firebase → engranaje ⚙️ → Project settings
+     → "Your apps" → tu app web </> → "SDK setup and configuration"
+     → elige "Config". Copia los valores y pégalos abajo.
+==================================================================== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<script>
+ // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyA7brBOSY-N5zCI58AY3nN2k2A29uRaIvw",
+  authDomain: "calidad-aire-g9.firebaseapp.com",
+  databaseURL: "https://calidad-aire-g9-default-rtdb.firebaseio.com",
+  projectId: "calidad-aire-g9",
+  storageBucket: "calidad-aire-g9.firebasestorage.app",
+  messagingSenderId: "936007636488",
+  appId: "1:936007636488:web:fc47679e32d06583c1e3bd",
+  measurementId: "G-69377LBZEZ"
+};
+</script>
+
+<style>
+  :root {
+    --ink: #0e1320;
+    --panel: #161d2e;
+    --panel-2: #1d263b;
+    --line: #2a344d;
+    --text: #e8edf7;
+    --muted: #8a96ad;
+    --verde: #22c55e;
+    --amarillo: #eab308;
+    --rojo: #ef4444;
+    --gray: #5b6680;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    background:
+      radial-gradient(900px 500px at 80% -10%, #1a2740 0%, transparent 60%),
+      var(--ink);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 28px 20px 48px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  /* --- Encabezado --- */
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px; margin-bottom: 28px;
+    border-bottom: 1px solid var(--line); padding-bottom: 18px;
+  }
+  .title h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  .title p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .conn {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  .conn .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--gray); }
+  .conn.online .dot { background: var(--verde); box-shadow: 0 0 12px var(--verde); }
+
+  /* --- Grilla principal --- */
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 18px; }
+  @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 24px;
+  }
+  .card .eyebrow {
+    font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin-bottom: 16px;
+  }
+
+  /* --- Indicador en vivo (semáforo grande) --- */
+  .live { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .gauge {
+    width: 168px; height: 168px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel-2);
+    border: 2px solid var(--line);
+    position: relative; transition: all .4s ease;
+    margin: 6px 0 18px;
+  }
+  .gauge .ring {
+    position: absolute; inset: -2px; border-radius: 50%;
+    border: 3px solid transparent; transition: all .4s ease;
+  }
+  .gauge .num {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 52px; font-weight: 600; line-height: 1;
+  }
+  .gauge .unit { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .estado-txt { font-size: 19px; font-weight: 600; margin-bottom: 4px; }
+  .estado-sub { font-size: 13px; color: var(--muted); }
+
+  .pulse { animation: pulse 2s infinite ease-in-out; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+
+  /* --- Stats --- */
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 20px; }
+  .stat { background: var(--panel-2); border-radius: 12px; padding: 14px; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .stat .v {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 26px; font-weight: 600; margin-top: 6px;
+  }
+
+  /* --- Gráfico --- */
+  .chart-card { display: flex; flex-direction: column; }
+  .chart-box { position: relative; flex: 1; min-height: 340px; }
+  .legend-note { font-size: 12px; color: var(--muted); margin-top: 14px; display: flex; gap: 18px; flex-wrap: wrap; }
+  .legend-note span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend-note i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 28px; }
+
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="title">
+      <h1>Monitor de Calidad del Aire</h1>
+      <p>Grupo 9 · Sección 2 — TEI201</p>
+    </div>
+    <div class="conn" id="conn"><span class="dot"></span><span id="connTxt">Conectando…</span></div>
+  </header>
+
+  <div class="grid">
+
+    <!-- Estado en vivo -->
+    <div class="card live">
+      <div class="eyebrow">Estado actual</div>
+      <div class="gauge" id="gauge">
+        <div class="ring" id="ring"></div>
+        <div>
+          <div class="num" id="rawNum">—</div>
+          <div class="unit">índice RAW</div>
+        </div>
+      </div>
+      <div class="estado-txt" id="estadoTxt">Esperando datos…</div>
+      <div class="estado-sub" id="tsTxt">—</div>
+
+      <div class="stats">
+        <div class="stat"><div class="k">Promedio</div><div class="v" id="avg">—</div></div>
+        <div class="stat"><div class="k">Máximo</div><div class="v" id="max">—</div></div>
+        <div class="stat"><div class="k">Lecturas</div><div class="v" id="count">—</div></div>
+        <div class="stat"><div class="k">Alertas</div><div class="v" id="alerts">—</div></div>
+      </div>
+    </div>
+
+    <!-- Tendencia -->
+    <div class="card chart-card">
+      <div class="eyebrow">Tendencia · últimas lecturas</div>
+      <div class="chart-box"><canvas id="chart"></canvas></div>
+      <div class="legend-note">
+        <span><i style="background:#6ab0ff"></i> Lectura del sensor</span>
+        <span><i style="background:var(--amarillo)"></i> Umbral regular (600)</span>
+        <span><i style="background:var(--rojo)"></i> Umbral malo (800)</span>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>Los datos se actualizan automáticamente desde Firebase · Soplar cerca del sensor sube el índice</footer>
+</div>
+
+<script>
+// ============ Inicializar Firebase ============
+let db = null;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+} catch (e) {
+  document.getElementById("connTxt").textContent = "Revisa firebaseConfig";
+  console.error(e);
+}
+
+const UMBRAL_REG = 600, UMBRAL_MAL = 800;
+const colores = { verde: "#22c55e", amarillo: "#eab308", rojo: "#ef4444", gray: "#5b6680" };
+
+// ============ Gráfico ============
+const ctx = document.getElementById("chart").getContext("2d");
+const chart = new Chart(ctx, {
+  type: "line",
+  data: {
+    labels: [],
+    datasets: [
+      {
+        label: "Lectura", data: [], borderColor: "#6ab0ff",
+        backgroundColor: "rgba(106,176,255,0.12)", borderWidth: 2,
+        fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 4
+      },
+      { label: "Regular", data: [], borderColor: "#eab308", borderWidth: 1.2,
+        borderDash: [6,5], pointRadius: 0, fill: false },
+      { label: "Malo", data: [], borderColor: "#ef4444", borderWidth: 1.2,
+        borderDash: [6,5], pointRadius: 0, fill: false }
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+    plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+    scales: {
+      x: { ticks: { color: "#8a96ad", maxTicksLimit: 8, font: { size: 10 } },
+           grid: { color: "rgba(255,255,255,0.04)" } },
+      y: { ticks: { color: "#8a96ad", font: { size: 10 } },
+           grid: { color: "rgba(255,255,255,0.05)" }, beginAtZero: true }
+    }
+  }
+});
+
+// ============ Estado en vivo (/sensor/actual) ============
+if (db) {
+  db.ref("sensor/actual").on("value", (snap) => {
+    const conn = document.getElementById("conn");
+    conn.classList.add("online");
+    document.getElementById("connTxt").textContent = "En línea";
+
+    const d = snap.val();
+    if (!d) return;
+
+    document.getElementById("rawNum").textContent = d.raw ?? "—";
+    document.getElementById("estadoTxt").textContent = d.calidad ?? "—";
+    document.getElementById("tsTxt").textContent = d.timestamp ?? "—";
+
+    const c = colores[d.color] || colores.gray;
+    const ring = document.getElementById("ring");
+    const gauge = document.getElementById("gauge");
+    ring.style.borderColor = c;
+    ring.style.boxShadow = "0 0 28px " + c + "66";
+    gauge.style.background = "radial-gradient(circle at 50% 40%, " + c + "22, #1d263b 70%)";
+    document.getElementById("rawNum").style.color = c;
+    gauge.classList.toggle("pulse", d.color === "rojo");
+  });
+
+  // ============ Histórico (/sensor/historico) ============
+  db.ref("sensor/historico").limitToLast(40).on("value", (snap) => {
+    const labels = [], valores = [];
+    snap.forEach((child) => {
+      const d = child.val();
+      // muestra solo la hora (HH:MM:SS) para no saturar el eje
+      const t = (d.timestamp || child.key || "").split(" ")[1] || child.key;
+      labels.push(t);
+      valores.push(d.raw);
+    });
+
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = valores;
+    chart.data.datasets[1].data = labels.map(() => UMBRAL_REG);
+    chart.data.datasets[2].data = labels.map(() => UMBRAL_MAL);
+    chart.update();
+
+    // Estadísticas
+    if (valores.length) {
+      const sum = valores.reduce((a, b) => a + b, 0);
+      const avg = Math.round(sum / valores.length);
+      const max = Math.max(...valores);
+      const alertas = valores.filter((v) => v >= UMBRAL_MAL).length;
+      document.getElementById("avg").textContent = avg;
+      document.getElementById("max").textContent = max;
+      document.getElementById("count").textContent = valores.length;
+      document.getElementById("alerts").textContent = alertas;
+    }
+  });
+}
+</script>
+</body>
+</html>
